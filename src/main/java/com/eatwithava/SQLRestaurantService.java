@@ -37,26 +37,19 @@ public class SQLRestaurantService {
      */
     public List<RestaurantRecord> getOpenRestaurants(final DayOfWeek dayOfWeek, final LocalTime localTime) throws SQLException {
         final String dayOfWeekString = dayOfWeek.toString();
-
-        final DayOfWeek nextDayOfWeek = dayOfWeek.plus(1);
-        final String nextDayOfWeekString = nextDayOfWeek.toString();
-
-        final DayOfWeek previousDayOfWeek = dayOfWeek.minus(1);
-        final String previousDayOfWeekString = previousDayOfWeek.toString();
-
-
         final Integer minuteOfDay    = localTime.get(MINUTE_OF_DAY);
 
-        final String query = String.join("\n"
-                ,
-                 "select * from restaurants"
-                , ""
-                , ""
-                , ""
-                , ""
+        final String query = String.join("\n",
+                 "select r.id, r.name from restaurants r"
+                , "right join open_hours o on r.id = o.restaurant_id"
+                , "where o.day_of_week = ?"
+                , "and ("
+                , "(o.start_time_minute_of_day < o.end_time_minute_of_day and o.start_time_minute_of_day < ? and o.end_time_minute_of_day > ?)"
+                , "or (o.start_time_minute_of_day > o.end_time_minute_of_day and (o.start_time_minute_of_day < ? or o.end_time_minute_of_day > ?))"
+                , ")"
         );
 
-        return runQueryAndParseRestaurants(query, dayOfWeekString, minuteOfDay);
+        return runQueryAndParseRestaurants(query, dayOfWeekString, minuteOfDay, minuteOfDay, minuteOfDay, minuteOfDay);
     }
 
     /**
@@ -71,13 +64,11 @@ public class SQLRestaurantService {
     public List<RestaurantRecord> getRestaurantsWithMenuOfSizeGreaterThanOrEqualTo(final Integer menuSize) throws SQLException {
 
 
-        final String query = String.join("\n"
-                ,
-                " select * from restaurants"
-                , ""
-                , ""
-                , ""
-                , ""
+        final String query = String.join("\n",
+                "select r.id, r.name from restaurants r"
+                , "right join menu_items m on r.id = m.restaurant_id"
+                , "group by r.id"
+                , "having count(r.id) >= ?"
         );
 
         return runQueryAndParseRestaurants(query, menuSize);
