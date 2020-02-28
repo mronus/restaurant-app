@@ -21,6 +21,8 @@ import com.eatwithava.jooq.tables.records.RestaurantsRecord;
 
 import static com.eatwithava.jooq.tables.Restaurants.RESTAURANTS;
 import static java.time.temporal.ChronoField.MINUTE_OF_DAY;
+import static com.eatwithava.jooq.tables.OpenHours.OPEN_HOURS;
+import static com.eatwithava.jooq.tables.MenuItems.MENU_ITEMS;
 
 public class JooqRestaurantService {
 
@@ -42,8 +44,22 @@ public class JooqRestaurantService {
 
         return withDSLContext(create -> {
             return create
-                    .selectFrom(RESTAURANTS)
-                    .fetch();
+                    .select(RESTAURANTS.ID, RESTAURANTS.NAME)
+                    .from(RESTAURANTS)
+                    .rightJoin(OPEN_HOURS).on(RESTAURANTS.ID.eq(OPEN_HOURS.RESTAURANT_ID))
+                    .where(
+                            OPEN_HOURS.DAY_OF_WEEK.eq(dayOfWeekString)
+                            .and(
+                                    OPEN_HOURS.START_TIME_MINUTE_OF_DAY.lt(OPEN_HOURS.END_TIME_MINUTE_OF_DAY)
+                                    .and(OPEN_HOURS.START_TIME_MINUTE_OF_DAY.lt(minuteOfDay).and(OPEN_HOURS.END_TIME_MINUTE_OF_DAY.gt(minuteOfDay)))
+
+                            )
+                            .or(
+                                    OPEN_HOURS.START_TIME_MINUTE_OF_DAY.gt(OPEN_HOURS.END_TIME_MINUTE_OF_DAY)
+                                    .and(OPEN_HOURS.START_TIME_MINUTE_OF_DAY.lt(minuteOfDay).or(OPEN_HOURS.END_TIME_MINUTE_OF_DAY.gt(minuteOfDay)))
+                            )
+                    )
+                    .fetchInto(RESTAURANTS);
         });
     }
 
@@ -59,8 +75,12 @@ public class JooqRestaurantService {
     public List<RestaurantsRecord> getRestaurantsWithMenuOfSizeGreaterThanOrEqualTo(final Integer menuSize) throws SQLException {
         return withDSLContext(create -> {
             return create
-                    .selectFrom(RESTAURANTS)
-                    .fetch();
+                    .select(RESTAURANTS.ID, RESTAURANTS.NAME)
+                    .from(RESTAURANTS)
+                    .rightJoin(MENU_ITEMS).on(RESTAURANTS.ID.eq(MENU_ITEMS.RESTAURANT_ID))
+                    .groupBy(RESTAURANTS.ID)
+                    .having(DSL.count().ge(menuSize))
+                    .fetchInto(RESTAURANTS);
         });
     }
 
