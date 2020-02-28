@@ -5,12 +5,15 @@ import java.time.DayOfWeek;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.ChronoField;
-import java.util.Collections;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import io.atlassian.fugue.Maybe;
 import org.apache.commons.csv.CSVRecord;
 
 import io.atlassian.fugue.Option;
@@ -57,6 +60,10 @@ public class CSVRestaurantService {
      *
      */
     public static Option<Restaurant> parse(final CSVRecord r) {
+        if (r.size() == 2) { // make sure the csv row has exactly 2 columns
+            Map<DayOfWeek, Restaurant.OpenHours> dayOfWeekOpenHoursMap = parseOpenHour(r.get(1));
+            return dayOfWeekOpenHoursMap.isEmpty() ? Option.none() : Option.some(new Restaurant(r.get(0), dayOfWeekOpenHoursMap));
+        }
         return Option.none();
     }
 
@@ -64,7 +71,26 @@ public class CSVRestaurantService {
      * TODO: Implement me, This is a useful helper method
      */
     public static Map<DayOfWeek, Restaurant.OpenHours> parseOpenHour(final String openhoursString) {
-        return Collections.emptyMap();
+        try {
+            String[] dayGroups = openhoursString.split(";");
+            Map<DayOfWeek, Restaurant.OpenHours> dayOfWeekOpenHoursMap = new HashMap<>();
+            for (String dayGroup : dayGroups) {
+                String[] daysAndHours = dayGroup.split("\\|"); // [0]: days, [1]: open hours
+                String[] hours = daysAndHours[1].split("-");
+                Restaurant.OpenHours openHours = new Restaurant.OpenHours(LocalTime.parse(hours[0]), LocalTime.parse(hours[1]));
+                if (openHours.getStartTime().equals(openHours.getEndTime())) {
+                    continue; // invalid open hours
+                }
+                Arrays.stream(daysAndHours[0].split(","))
+                        .map(CSVRestaurantService::getDayOfWeek)
+                        .filter(Option::isDefined)
+                        .map(Maybe::get).forEach(dayOfWeek -> dayOfWeekOpenHoursMap.put(dayOfWeek, openHours));
+            }
+
+            return dayOfWeekOpenHoursMap;
+        } catch (IndexOutOfBoundsException ex) {
+            throw new RuntimeException("The supplied data appears to be invalid ["+ openhoursString +"]", ex);
+        }
     }
 
     public CSVRestaurantService() throws IOException {
@@ -101,7 +127,17 @@ public class CSVRestaurantService {
      *
      */
     public List<Restaurant> getOpenRestaurants(final DayOfWeek dayOfWeek, final LocalTime localTime) {
-        return Collections.emptyList();
+        return getAllRestaurants().stream().filter(restaurant -> isRestaurantOpen(restaurant, dayOfWeek, localTime)).collect(Collectors.toList());
+    }
+
+    private boolean isRestaurantOpen(final Restaurant restaurant, final DayOfWeek dayOfWeek, final LocalTime localTime) {
+        if (!restaurant.getOpenHoursMap().containsKey(dayOfWeek)) {
+            return false;
+        }
+        Restaurant.OpenHours openHours = restaurant.getOpenHoursMap().get(dayOfWeek);
+        return openHours.getStartTime().isBefore(openHours.getEndTime())
+                ? localTime.isAfter(openHours.getStartTime()) && localTime.isBefore(openHours.getEndTime())
+                : localTime.isAfter(openHours.getStartTime()) || localTime.isBefore(openHours.getEndTime());
     }
 
     public List<Restaurant> getOpenRestaurantsForLocalDateTime(final LocalDateTime localDateTime) {
